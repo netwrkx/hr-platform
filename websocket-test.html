@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HR Platform — WebSocket Test</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
+        h1 { margin-bottom: 10px; }
+        .status { padding: 8px 16px; border-radius: 4px; margin-bottom: 20px; font-weight: 600; }
+        .status.connected { background: #d4edda; color: #155724; }
+        .status.disconnected { background: #f8d7da; color: #721c24; }
+        .status.connecting { background: #fff3cd; color: #856404; }
+        .channels { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+        .channel { background: #e2e3e5; padding: 4px 12px; border-radius: 12px; font-size: 0.85em; }
+        #events { max-height: 600px; overflow-y: auto; }
+        .event { background: white; border-left: 4px solid #007bff; padding: 12px; margin-bottom: 8px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .event .meta { font-size: 0.8em; color: #666; margin-bottom: 4px; }
+        .event pre { font-size: 0.85em; background: #f8f9fa; padding: 8px; border-radius: 4px; overflow-x: auto; }
+        .event.created { border-left-color: #28a745; }
+        .event.updated { border-left-color: #ffc107; }
+        .event.deleted { border-left-color: #dc3545; }
+        .event.checklist { border-left-color: #17a2b8; }
+    </style>
+</head>
+<body>
+    <h1>HR Platform — WebSocket Test</h1>
+    <div id="connection-status" class="status connecting">Connecting...</div>
+
+    <h3>Subscribed Channels</h3>
+    <div class="channels">
+        <span class="channel">country.USA</span>
+        <span class="channel">country.Germany</span>
+        <span class="channel">checklist.USA</span>
+        <span class="channel">checklist.Germany</span>
+    </div>
+
+    <h3>Received Events</h3>
+    <div id="events"><p style="color:#999;">Waiting for events...</p></div>
+
+    <!-- Pusher.js client (compatible with Soketi) -->
+    <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
+    <script>
+        const eventsContainer = document.getElementById('events');
+        const statusEl = document.getElementById('connection-status');
+        let firstEvent = true;
+
+        // Connect to Soketi (Pusher-compatible)
+        const pusher = new Pusher('hr-platform-key', {
+            wsHost: window.location.hostname,
+            wsPort: 6001,
+            forceTLS: false,
+            disableStats: true,
+            enabledTransports: ['ws', 'wss'],
+            cluster: 'mt1'
+        });
+
+        pusher.connection.bind('connected', () => {
+            statusEl.textContent = 'Connected';
+            statusEl.className = 'status connected';
+        });
+
+        pusher.connection.bind('disconnected', () => {
+            statusEl.textContent = 'Disconnected';
+            statusEl.className = 'status disconnected';
+        });
+
+        pusher.connection.bind('error', (err) => {
+            statusEl.textContent = 'Connection Error';
+            statusEl.className = 'status disconnected';
+            console.error('Pusher error:', err);
+        });
+
+        // Subscribe to channels
+        const channels = ['country.USA', 'country.Germany', 'checklist.USA', 'checklist.Germany'];
+        const eventTypes = ['EmployeeCreated', 'EmployeeUpdated', 'EmployeeDeleted', 'ChecklistUpdated'];
+
+        channels.forEach(channelName => {
+            const channel = pusher.subscribe(channelName);
+
+            eventTypes.forEach(eventType => {
+                channel.bind(eventType, (data) => {
+                    addEvent(channelName, eventType, data);
+                });
+            });
+
+            // Catch-all for any event
+            channel.bind_global((eventName, data) => {
+                if (!eventTypes.includes(eventName) && !eventName.startsWith('pusher:')) {
+                    addEvent(channelName, eventName, data);
+                }
+            });
+        });
+
+        function addEvent(channel, eventType, data) {
+            if (firstEvent) {
+                eventsContainer.innerHTML = '';
+                firstEvent = false;
+            }
+
+            const typeClass = eventType.toLowerCase().includes('created') ? 'created'
+                : eventType.toLowerCase().includes('updated') ? 'updated'
+                : eventType.toLowerCase().includes('deleted') ? 'deleted'
+                : eventType.toLowerCase().includes('checklist') ? 'checklist'
+                : '';
+
+            const div = document.createElement('div');
+            div.className = `event ${typeClass}`;
+            div.innerHTML = `
+                <div class="meta">${new Date().toLocaleTimeString()} | Channel: <strong>${channel}</strong> | Event: <strong>${eventType}</strong></div>
+                <pre>${JSON.stringify(data, null, 2)}</pre>
+            `;
+            eventsContainer.prepend(div);
+        }
+    </script>
+</body>
+</html>

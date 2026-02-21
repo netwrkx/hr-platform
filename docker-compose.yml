@@ -1,0 +1,133 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: hr_platform
+      POSTGRES_USER: hr_user
+      POSTGRES_PASSWORD: hr_secret
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hr_user -d hr_platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: hr_rabbit
+      RABBITMQ_DEFAULT_PASS: hr_rabbit_secret
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  soketi:
+    image: quay.io/soketi/soketi:1.6-16-debian
+    ports:
+      - "6001:6001"
+      - "6002:6002"
+    environment:
+      SOKETI_DEBUG: "1"
+      SOKETI_DEFAULT_APP_ID: "hr-platform"
+      SOKETI_DEFAULT_APP_KEY: "hr-platform-key"
+      SOKETI_DEFAULT_APP_SECRET: "hr-platform-secret"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:6001"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  hr-service:
+    build:
+      context: ./hr-service
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000"
+    environment:
+      APP_NAME: "HR Service"
+      APP_ENV: local
+      APP_KEY: base64:hr-service-key-placeholder-32ch=
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:8001
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: hr_platform
+      DB_USERNAME: hr_user
+      DB_PASSWORD: hr_secret
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: hr_rabbit
+      RABBITMQ_PASSWORD: hr_rabbit_secret
+      RABBITMQ_VHOST: /
+      RABBITMQ_EXCHANGE: hr.events
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - ./hr-service:/var/www/html
+
+  hub-service:
+    build:
+      context: ./hub-service
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8000"
+    environment:
+      APP_NAME: "Hub Service"
+      APP_ENV: local
+      APP_KEY: base64:hub-service-key-placeholder-32c=
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:8002
+      CACHE_DRIVER: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: hr_rabbit
+      RABBITMQ_PASSWORD: hr_rabbit_secret
+      RABBITMQ_VHOST: /
+      RABBITMQ_EXCHANGE: hr.events
+      RABBITMQ_QUEUE: hub.employee.events
+      HR_SERVICE_URL: http://hr-service:8000
+      BROADCAST_DRIVER: pusher
+      PUSHER_APP_ID: hr-platform
+      PUSHER_APP_KEY: hr-platform-key
+      PUSHER_APP_SECRET: hr-platform-secret
+      PUSHER_HOST: soketi
+      PUSHER_PORT: 6001
+      PUSHER_SCHEME: http
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      soketi:
+        condition: service_healthy
+    volumes:
+      - ./hub-service:/var/www/html
+
+volumes:
+  postgres_data:

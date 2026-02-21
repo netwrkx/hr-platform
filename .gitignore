@@ -1,0 +1,25 @@
+# Dependencies
+vendor/
+node_modules/
+
+# Environment files
+.env
+.env.backup
+.env.production
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# PHP / Laravel
+.phpunit.cache/
+storage/logs/
+
+# Docker
+docker-compose.override.yml
