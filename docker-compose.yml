@@ -52,10 +52,10 @@ services:
       SOKETI_DEFAULT_APP_KEY: "hr-platform-key"
       SOKETI_DEFAULT_APP_SECRET: "hr-platform-secret"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:6001"]
+      test: ["CMD-SHELL", "node -e \"const http=require('http');const r=http.get('http://localhost:6001',res=>{process.exit(res.statusCode<500?0:1)});r.on('error',()=>process.exit(1));\""]
       interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 5
 
   hr-service:
     build:

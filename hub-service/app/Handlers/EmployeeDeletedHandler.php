@@ -2,22 +2,34 @@
 
 namespace App\Handlers;
 
+use App\Services\CacheService;
+use Illuminate\Support\Facades\Log;
+
 class EmployeeDeletedHandler
 {
+    public function __construct(
+        private CacheService $cacheService,
+    ) {}
+
     /**
      * Handle an EmployeeDeleted event.
      *
-     * Responsibilities:
-     * 1. Remove employee data from Redis cache (key: employee:{id})
-     * 2. Invalidate country employee list cache (employees:{country}:*)
-     * 3. Invalidate country checklist cache (checklist:{country})
-     * 4. Broadcast WebSocket event to employee.{id}, country.{country}
-     * 5. Log successful processing
-     *
-     * @param array $eventData The deserialized event payload
+     * 1. Remove employee data from Redis cache
+     * 2. Invalidate country employee list and checklist caches
+     * 3. Log successful processing
      */
     public function handle(array $eventData): void
     {
-        // TODO: Implement per PRD Feature 2.4
+        $employeeId = $eventData['data']['employee_id'];
+        $country = $eventData['country'];
+
+        $this->cacheService->removeEmployee($employeeId);
+
+        $this->cacheService->invalidateCountry($country);
+
+        Log::info('EmployeeDeleted processed', [
+            'employee_id' => $employeeId,
+            'country' => $country,
+        ]);
     }
 }
