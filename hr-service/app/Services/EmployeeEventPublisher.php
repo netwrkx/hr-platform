@@ -6,6 +6,13 @@ use App\Models\Employee;
 
 class EmployeeEventPublisher
 {
+    private const EXCHANGE = 'hr.events';
+
+    public function __construct(
+        private EventPayloadBuilder $payloadBuilder,
+        private RabbitMQService $rabbitMQ,
+    ) {}
+
     /**
      * Publish an EmployeeCreated event to RabbitMQ.
      *
@@ -13,8 +20,10 @@ class EmployeeEventPublisher
      */
     public function publishCreated(Employee $employee): void
     {
-        // TODO: Build event payload and publish to RabbitMQ
-        // Graceful degradation: catch exceptions, log, never fail the HTTP response
+        $payload = $this->payloadBuilder->buildPayload('EmployeeCreated', $employee);
+        $routingKey = $this->payloadBuilder->getRoutingKey('EmployeeCreated', $employee->country);
+
+        $this->rabbitMQ->publish(self::EXCHANGE, $routingKey, $payload);
     }
 
     /**
@@ -26,7 +35,10 @@ class EmployeeEventPublisher
      */
     public function publishUpdated(Employee $employee, array $changedFields): void
     {
-        // TODO: Build event payload with changed_fields and publish to RabbitMQ
+        $payload = $this->payloadBuilder->buildPayload('EmployeeUpdated', $employee, $changedFields);
+        $routingKey = $this->payloadBuilder->getRoutingKey('EmployeeUpdated', $employee->country);
+
+        $this->rabbitMQ->publish(self::EXCHANGE, $routingKey, $payload);
     }
 
     /**
@@ -36,17 +48,9 @@ class EmployeeEventPublisher
      */
     public function publishDeleted(Employee $employee): void
     {
-        // TODO: Build event payload and publish to RabbitMQ
-    }
+        $payload = $this->payloadBuilder->buildPayload('EmployeeDeleted', $employee);
+        $routingKey = $this->payloadBuilder->getRoutingKey('EmployeeDeleted', $employee->country);
 
-    /**
-     * Build the standardised event payload.
-     *
-     * @return array{event_id: string, event_type: string, timestamp: string, country: string, data: array}
-     */
-    protected function buildPayload(string $eventType, Employee $employee, array $changedFields = []): array
-    {
-        // TODO: Implement event payload builder per PRD spec
-        return [];
+        $this->rabbitMQ->publish(self::EXCHANGE, $routingKey, $payload);
     }
 }
