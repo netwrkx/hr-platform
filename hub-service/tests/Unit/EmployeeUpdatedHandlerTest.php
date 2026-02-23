@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Handlers\EmployeeUpdatedHandler;
+use App\Services\BroadcastService;
 use App\Services\CacheService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -12,6 +13,7 @@ use Tests\TestCase;
 class EmployeeUpdatedHandlerTest extends TestCase
 {
     private CacheService $cacheService;
+    private BroadcastService $broadcastService;
     private EmployeeUpdatedHandler $handler;
 
     protected function setUp(): void
@@ -19,7 +21,8 @@ class EmployeeUpdatedHandlerTest extends TestCase
         parent::setUp();
         Redis::flushall();
         $this->cacheService = new CacheService();
-        $this->handler = new EmployeeUpdatedHandler($this->cacheService);
+        $this->broadcastService = $this->createMock(BroadcastService::class);
+        $this->handler = new EmployeeUpdatedHandler($this->cacheService, $this->broadcastService);
     }
 
     protected function tearDown(): void
@@ -124,6 +127,25 @@ class EmployeeUpdatedHandlerTest extends TestCase
 
         $cached = Cache::get('employee:1');
         $this->assertNotNull($cached);
+    }
+
+    // ── Broadcasting ─────────────────────────────────────────────────────
+
+    public function test_triggers_broadcast_after_cache_update(): void
+    {
+        $broadcastService = $this->createMock(BroadcastService::class);
+        $broadcastService->expects($this->once())
+            ->method('broadcastEmployeeEvent')
+            ->with('EmployeeUpdated', $this->callback(function ($data) {
+                return $data['data']['employee_id'] === 1 && $data['country'] === 'USA';
+            }))
+            ->willReturnCallback(function () {
+                // Verify caching happened before broadcast
+                $this->assertNotNull(Cache::get('employee:1'));
+            });
+
+        $handler = new EmployeeUpdatedHandler($this->cacheService, $broadcastService);
+        $handler->handle($this->updateEventPayload());
     }
 
     // ── Logging ─────────────────────────────────────────────────────────

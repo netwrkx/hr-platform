@@ -30,10 +30,8 @@
 
     <h3>Subscribed Channels</h3>
     <div class="channels">
-        <span class="channel">country.USA</span>
-        <span class="channel">country.Germany</span>
-        <span class="channel">checklist.USA</span>
-        <span class="channel">checklist.Germany</span>
+        <span class="channel">employees.USA</span>
+        <span class="channel">employees.Germany</span>
     </div>
 
     <h3>Received Events</h3>
@@ -73,8 +71,8 @@
         });
 
         // Subscribe to channels
-        const channels = ['country.USA', 'country.Germany', 'checklist.USA', 'checklist.Germany'];
-        const eventTypes = ['EmployeeCreated', 'EmployeeUpdated', 'EmployeeDeleted', 'ChecklistUpdated'];
+        const channels = ['employees.USA', 'employees.Germany'];
+        const eventTypes = ['EmployeeCreated', 'EmployeeUpdated', 'EmployeeDeleted'];
 
         channels.forEach(channelName => {
             const channel = pusher.subscribe(channelName);

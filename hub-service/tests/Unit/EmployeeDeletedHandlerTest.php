@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Handlers\EmployeeDeletedHandler;
+use App\Services\BroadcastService;
 use App\Services\CacheService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -12,6 +13,7 @@ use Tests\TestCase;
 class EmployeeDeletedHandlerTest extends TestCase
 {
     private CacheService $cacheService;
+    private BroadcastService $broadcastService;
     private EmployeeDeletedHandler $handler;
 
     protected function setUp(): void
@@ -19,7 +21,8 @@ class EmployeeDeletedHandlerTest extends TestCase
         parent::setUp();
         Redis::flushall();
         $this->cacheService = new CacheService();
-        $this->handler = new EmployeeDeletedHandler($this->cacheService);
+        $this->broadcastService = $this->createMock(BroadcastService::class);
+        $this->handler = new EmployeeDeletedHandler($this->cacheService, $this->broadcastService);
     }
 
     protected function tearDown(): void
@@ -105,6 +108,28 @@ class EmployeeDeletedHandlerTest extends TestCase
         // USA caches untouched
         $this->assertEquals(['usa_list'], $this->cacheService->rememberEmployeeList('USA', 1, 15, fn () => ['fresh']));
         $this->assertEquals(['usa_checklist'], $this->cacheService->rememberChecklist('USA', fn () => ['fresh']));
+    }
+
+    // ── Broadcasting ─────────────────────────────────────────────────────
+
+    public function test_triggers_broadcast_after_cache_removal(): void
+    {
+        // Pre-cache employee so deletion is meaningful
+        $this->cacheService->cacheEmployee(3, ['id' => 3, 'name' => 'Hans', 'country' => 'Germany']);
+
+        $broadcastService = $this->createMock(BroadcastService::class);
+        $broadcastService->expects($this->once())
+            ->method('broadcastEmployeeEvent')
+            ->with('EmployeeDeleted', $this->callback(function ($data) {
+                return $data['data']['employee_id'] === 3 && $data['country'] === 'Germany';
+            }))
+            ->willReturnCallback(function () {
+                // Verify cache removal happened before broadcast
+                $this->assertNull(Cache::get('employee:3'));
+            });
+
+        $handler = new EmployeeDeletedHandler($this->cacheService, $broadcastService);
+        $handler->handle($this->deleteEventPayload());
     }
 
     // ── Logging ─────────────────────────────────────────────────────────

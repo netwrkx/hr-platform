@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Handlers\EmployeeCreatedHandler;
+use App\Services\BroadcastService;
 use App\Services\CacheService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -12,6 +13,7 @@ use Tests\TestCase;
 class EmployeeCreatedHandlerTest extends TestCase
 {
     private CacheService $cacheService;
+    private BroadcastService $broadcastService;
     private EmployeeCreatedHandler $handler;
 
     protected function setUp(): void
@@ -19,7 +21,8 @@ class EmployeeCreatedHandlerTest extends TestCase
         parent::setUp();
         Redis::flushall();
         $this->cacheService = new CacheService();
-        $this->handler = new EmployeeCreatedHandler($this->cacheService);
+        $this->broadcastService = $this->createMock(BroadcastService::class);
+        $this->handler = new EmployeeCreatedHandler($this->cacheService, $this->broadcastService);
     }
 
     protected function tearDown(): void
@@ -100,6 +103,25 @@ class EmployeeCreatedHandlerTest extends TestCase
         // Germany caches should still return cached data (not the fresh callback)
         $this->assertEquals(['germany_list'], $this->cacheService->rememberEmployeeList('Germany', 1, 15, fn () => ['fresh']));
         $this->assertEquals(['germany_checklist'], $this->cacheService->rememberChecklist('Germany', fn () => ['fresh']));
+    }
+
+    // ── Broadcasting ─────────────────────────────────────────────────────
+
+    public function test_triggers_broadcast_after_caching(): void
+    {
+        $broadcastService = $this->createMock(BroadcastService::class);
+        $broadcastService->expects($this->once())
+            ->method('broadcastEmployeeEvent')
+            ->with('EmployeeCreated', $this->callback(function ($data) {
+                return $data['data']['employee_id'] === 5 && $data['country'] === 'USA';
+            }))
+            ->willReturnCallback(function () {
+                // Verify caching happened before broadcast
+                $this->assertNotNull(Cache::get('employee:5'));
+            });
+
+        $handler = new EmployeeCreatedHandler($this->cacheService, $broadcastService);
+        $handler->handle($this->usaEventPayload());
     }
 
     // ── Logging ─────────────────────────────────────────────────────────
