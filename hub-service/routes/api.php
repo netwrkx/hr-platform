@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ChecklistController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -31,7 +32,4 @@ Route::get('/employees', function () {
 });
 
 // Checklist completion data per country
-Route::get('/checklists', function () {
-    // TODO: Implement ChecklistController
-    return response()->json(['message' => 'Not implemented'], 501);
-});
+Route::get('/checklists', [ChecklistController::class, 'index']);

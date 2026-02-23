@@ -51,18 +51,66 @@ class CacheService
 
     /**
      * Cache or update a single employee record.
-     * TTL: 5 minutes.
+     * TTL: 5 minutes. Also maintains a per-country index of employee IDs.
      */
     public function cacheEmployee(int $id, array $data, int $ttl = self::EMPLOYEE_TTL): void
     {
         Cache::put("employee:{$id}", $data, $ttl);
+
+        if (isset($data['country'])) {
+            $this->addToCountryIndex($data['country'], $id);
+        }
     }
 
     /**
-     * Remove a single employee from cache.
+     * Remove a single employee from cache and the country index.
      */
     public function removeEmployee(int $id): void
     {
+        $data = Cache::get("employee:{$id}");
+        if ($data && isset($data['country'])) {
+            $this->removeFromCountryIndex($data['country'], $id);
+        }
         Cache::forget("employee:{$id}");
+    }
+
+    /**
+     * Retrieve all cached employees for a given country.
+     */
+    public function getEmployeesByCountry(string $country): array
+    {
+        $ids = Cache::get("country:{$country}:employee_ids", []);
+        $employees = [];
+
+        foreach ($ids as $id) {
+            $data = Cache::get("employee:{$id}");
+            if ($data !== null) {
+                $employees[] = $data;
+            }
+        }
+
+        return $employees;
+    }
+
+    private function addToCountryIndex(string $country, int $id): void
+    {
+        $key = "country:{$country}:employee_ids";
+        $ids = Cache::get($key, []);
+        if (!in_array($id, $ids)) {
+            $ids[] = $id;
+        }
+        Cache::forever($key, $ids);
+    }
+
+    private function removeFromCountryIndex(string $country, int $id): void
+    {
+        $key = "country:{$country}:employee_ids";
+        $ids = Cache::get($key, []);
+        $ids = array_values(array_filter($ids, fn ($i) => $i !== $id));
+        if (empty($ids)) {
+            Cache::forget($key);
+        } else {
+            Cache::forever($key, $ids);
+        }
     }
 }
