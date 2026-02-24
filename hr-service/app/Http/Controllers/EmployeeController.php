@@ -2,18 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\EmployeeCreated;
+use App\Events\EmployeeDeleted;
+use App\Events\EmployeeUpdated;
 use App\Http\Requests\EmployeeFormRequest;
 use App\Models\Employee;
-use App\Services\EmployeeEventPublisher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class EmployeeController extends Controller
 {
-    public function __construct(
-        private EmployeeEventPublisher $eventPublisher
-    ) {}
 
     /**
      * GET /api/employees — Paginated list, filterable by country.
@@ -52,7 +51,7 @@ class EmployeeController extends Controller
         $employee = Employee::create($request->validated());
 
         try {
-            $this->eventPublisher->publishCreated($employee);
+            event(new EmployeeCreated($employee));
         } catch (\Throwable $e) {
             Log::error('Failed to publish EmployeeCreated event', [
                 'event_type'   => 'EmployeeCreated',
@@ -107,7 +106,7 @@ class EmployeeController extends Controller
         }
 
         try {
-            $this->eventPublisher->publishUpdated($employee, $changedFields);
+            event(new EmployeeUpdated($employee, $changedFields));
         } catch (\Throwable $e) {
             Log::error('Failed to publish EmployeeUpdated event', [
                 'event_type'   => 'EmployeeUpdated',
@@ -137,7 +136,7 @@ class EmployeeController extends Controller
         $employee->delete();
 
         try {
-            $this->eventPublisher->publishDeleted($employeeData);
+            event(new EmployeeDeleted($employeeData));
         } catch (\Throwable $e) {
             Log::error('Failed to publish EmployeeDeleted event', [
                 'event_type'   => 'EmployeeDeleted',

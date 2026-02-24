@@ -3,7 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Employee;
-use App\Services\EmployeeEventPublisher;
+use App\Services\RabbitMQService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -271,9 +271,9 @@ class EmployeeCrudTest extends TestCase
 
     public function test_create_succeeds_when_rabbitmq_unavailable(): void
     {
-        // Mock the publisher to throw an exception (simulating RabbitMQ down)
-        $publisher = $this->mock(EmployeeEventPublisher::class);
-        $publisher->shouldReceive('publishCreated')
+        // Mock RabbitMQService to throw (simulating RabbitMQ down)
+        $mock = $this->mock(RabbitMQService::class);
+        $mock->shouldReceive('publish')
             ->once()
             ->andThrow(new \RuntimeException('Connection refused'));
 
@@ -297,8 +297,8 @@ class EmployeeCrudTest extends TestCase
     {
         $employee = Employee::factory()->usa()->create(['salary' => 70000]);
 
-        $publisher = $this->mock(EmployeeEventPublisher::class);
-        $publisher->shouldReceive('publishUpdated')
+        $mock = $this->mock(RabbitMQService::class);
+        $mock->shouldReceive('publish')
             ->once()
             ->andThrow(new \RuntimeException('Connection refused'));
 
@@ -319,8 +319,8 @@ class EmployeeCrudTest extends TestCase
     {
         $employee = Employee::factory()->usa()->create();
 
-        $publisher = $this->mock(EmployeeEventPublisher::class);
-        $publisher->shouldReceive('publishDeleted')
+        $mock = $this->mock(RabbitMQService::class);
+        $mock->shouldReceive('publish')
             ->once()
             ->andThrow(new \RuntimeException('Connection refused'));
 
