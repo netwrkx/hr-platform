@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Resources\EmployeeCollection;
 use App\ServerUI\ColumnConfig;
 use App\Services\CacheService;
 use Illuminate\Http\JsonResponse;
@@ -36,16 +37,6 @@ class EmployeeController extends Controller
         $result = $this->cacheService->rememberEmployeeList($country, $page, $perPage, function () use ($country, $page, $perPage) {
             $allEmployees = $this->cacheService->getEmployeesByCountry($country);
 
-            // Mask SSN for USA employees
-            if ($country === 'USA') {
-                $allEmployees = array_map(function (array $employee) {
-                    if (isset($employee['ssn'])) {
-                        $employee['ssn'] = ColumnConfig::maskSsn($employee['ssn']);
-                    }
-                    return $employee;
-                }, $allEmployees);
-            }
-
             $total = count($allEmployees);
             $lastPage = $total > 0 ? (int) ceil($total / $perPage) : 1;
             $offset = ($page - 1) * $perPage;
@@ -63,6 +54,6 @@ class EmployeeController extends Controller
             ];
         });
 
-        return response()->json($result);
+        return (new EmployeeCollection($result))->response();
     }
 }

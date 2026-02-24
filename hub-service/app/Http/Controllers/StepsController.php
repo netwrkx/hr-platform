@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Resources\StepCollection;
 use App\ServerUI\StepRegistry;
 use App\Services\CacheService;
 use Illuminate\Http\JsonResponse;
@@ -30,12 +31,12 @@ class StepsController extends Controller
             return response()->json(['error' => "Unsupported country: {$country}"], 422);
         }
 
-        $result = $this->cacheService->remember(
+        $steps = $this->cacheService->remember(
             "steps:{$country}",
             self::STEPS_TTL,
-            fn () => ['steps' => $this->stepRegistry->getSteps($country)]
+            fn () => $this->stepRegistry->getSteps($country)
         );
 
-        return response()->json($result);
+        return (new StepCollection($steps))->response();
     }
 }

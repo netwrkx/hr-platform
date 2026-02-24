@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Resources\SchemaResource;
 use App\ServerUI\SchemaBuilder;
 use App\Services\CacheService;
 use Illuminate\Http\JsonResponse;
@@ -31,13 +32,13 @@ class SchemaController extends Controller
         }
 
         try {
-            $result = $this->cacheService->remember(
+            $schema = $this->cacheService->remember(
                 "schema:{$stepId}:{$country}",
                 self::SCHEMA_TTL,
                 fn () => $this->schemaBuilder->getSchema($stepId, $country)
             );
 
-            return response()->json($result);
+            return (new SchemaResource($schema))->response();
         } catch (\InvalidArgumentException $e) {
             return response()->json(['error' => $e->getMessage()], 404);
         }

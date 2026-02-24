@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Resources\ChecklistCollection;
 use App\Services\ChecklistService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,6 +29,6 @@ class ChecklistController extends Controller
 
         $result = $this->checklistService->evaluate($country);
 
-        return response()->json($result);
+        return (new ChecklistCollection($result))->response();
     }
 }
