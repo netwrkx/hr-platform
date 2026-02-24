@@ -6,7 +6,6 @@ use App\Services\EventConsumer;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use PhpAmqpLib\Connection\AMQPStreamConnection;
-use PhpAmqpLib\Exchange\AMQPExchangeType;
 use PhpAmqpLib\Message\AMQPMessage;
 
 class ConsumeEmployeeEvents extends Command
@@ -33,6 +32,15 @@ class ConsumeEmployeeEvents extends Command
                 config('rabbitmq.user', 'guest'),
                 config('rabbitmq.password', 'guest'),
                 config('rabbitmq.vhost', '/'),
+                false,       // insist
+                'AMQPLAIN',  // login_method
+                null,        // login_response
+                'en_US',     // locale
+                3.0,         // connection_timeout
+                130.0,       // read_write_timeout (> 2 * heartbeat)
+                null,        // context
+                false,       // keepalive
+                60           // heartbeat
             );
         } catch (\Throwable $e) {
             $this->error("Failed to connect to RabbitMQ: {$e->getMessage()}");
@@ -45,12 +53,12 @@ class ConsumeEmployeeEvents extends Command
         $channel = $connection->channel();
 
         // Declare dead-letter exchange and queue
-        $channel->exchange_declare(self::DLQ_EXCHANGE, AMQPExchangeType::FANOUT, false, true, false);
+        $channel->exchange_declare(self::DLQ_EXCHANGE, 'fanout', false, true, false);
         $channel->queue_declare($dlq, false, true, false, false);
         $channel->queue_bind($dlq, self::DLQ_EXCHANGE);
 
         // Declare main exchange and queue with DLX
-        $channel->exchange_declare(self::EXCHANGE, AMQPExchangeType::TOPIC, false, true, false);
+        $channel->exchange_declare(self::EXCHANGE, 'topic', false, true, false);
         $channel->queue_declare($queue, false, true, false, false, false, [
             'x-dead-letter-exchange' => ['S', self::DLQ_EXCHANGE],
         ]);
@@ -70,17 +78,18 @@ class ConsumeEmployeeEvents extends Command
             false,
             false,
             function (AMQPMessage $msg) use ($consumer, $channel) {
-                $result = $consumer->processMessage($msg->getBody());
+                $result = $consumer->processMessage($msg->body);
+                $deliveryTag = $msg->delivery_info['delivery_tag'];
 
                 match ($result) {
-                    EventConsumer::ACK => $channel->basic_ack($msg->getDeliveryTag()),
-                    EventConsumer::REQUEUE => $channel->basic_nack($msg->getDeliveryTag(), false, true),
-                    EventConsumer::REJECT => $channel->basic_nack($msg->getDeliveryTag(), false, false),
+                    EventConsumer::ACK => $channel->basic_ack($deliveryTag),
+                    EventConsumer::REQUEUE => $channel->basic_nack($deliveryTag, false, true),
+                    EventConsumer::REJECT => $channel->basic_nack($deliveryTag, false, false),
                 };
             }
         );
 
-        while ($channel->is_consuming()) {
+        while (count($channel->callbacks)) {
             $channel->wait();
         }
 
