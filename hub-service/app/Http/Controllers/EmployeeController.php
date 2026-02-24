@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Resources\EmployeeCollection;
 use App\ServerUI\ColumnConfig;
 use App\Services\CacheService;
+use App\Services\HrServiceClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -16,6 +17,7 @@ class EmployeeController extends Controller
     public function __construct(
         private CacheService $cacheService,
         private ColumnConfig $columnConfig,
+        private HrServiceClient $hrServiceClient,
     ) {
     }
 
@@ -37,23 +39,52 @@ class EmployeeController extends Controller
         $result = $this->cacheService->rememberEmployeeList($country, $page, $perPage, function () use ($country, $page, $perPage) {
             $allEmployees = $this->cacheService->getEmployeesByCountry($country);
 
-            $total = count($allEmployees);
-            $lastPage = $total > 0 ? (int) ceil($total / $perPage) : 1;
-            $offset = ($page - 1) * $perPage;
-            $data = array_values(array_slice($allEmployees, $offset, $perPage));
+            if (!empty($allEmployees)) {
+                $total = count($allEmployees);
+                $lastPage = (int) ceil($total / $perPage);
+                $offset = ($page - 1) * $perPage;
+                $data = array_values(array_slice($allEmployees, $offset, $perPage));
 
-            return [
-                'columns' => $this->columnConfig->getColumns($country),
-                'data' => $data,
-                'pagination' => [
-                    'total' => $total,
-                    'per_page' => $perPage,
-                    'current_page' => $page,
-                    'last_page' => $lastPage,
-                ],
-            ];
+                return [
+                    'columns' => $this->columnConfig->getColumns($country),
+                    'data' => $data,
+                    'pagination' => [
+                        'total' => $total,
+                        'per_page' => $perPage,
+                        'current_page' => $page,
+                        'last_page' => $lastPage,
+                    ],
+                ];
+            }
+
+            // Cold start / Redis flush — fallback to HR Service HTTP
+            return $this->fetchFromHrService($country, $page, $perPage);
         });
 
         return (new EmployeeCollection($result))->response();
+    }
+
+    private function fetchFromHrService(string $country, int $page, int $perPage): array
+    {
+        $result = $this->hrServiceClient->fetchEmployees($country, $page, $perPage);
+
+        if ($result === null) {
+            return [
+                'columns' => $this->columnConfig->getColumns($country),
+                'data' => [],
+                'pagination' => [
+                    'total' => 0,
+                    'per_page' => $perPage,
+                    'current_page' => $page,
+                    'last_page' => 1,
+                ],
+            ];
+        }
+
+        return [
+            'columns' => $this->columnConfig->getColumns($country),
+            'data' => $result['data'],
+            'pagination' => $result['pagination'],
+        ];
     }
 }

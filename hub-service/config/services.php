@@ -14,6 +14,10 @@ return [
     |
     */
 
+    'hr' => [
+        'url' => env('HR_SERVICE_URL', 'http://hr-service:8000'),
+    ],
+
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
     ],

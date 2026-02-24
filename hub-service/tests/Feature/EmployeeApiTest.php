@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Services\CacheService;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Redis;
 use Tests\TestCase;
 
@@ -209,10 +210,85 @@ class EmployeeApiTest extends TestCase
 
     public function test_returns_empty_list_when_no_employees(): void
     {
+        // Both Redis and HR Service have no employees
+        Http::fake([
+            '*/api/employees*' => Http::response([
+                'data' => [],
+                'meta' => ['current_page' => 1, 'last_page' => 1, 'per_page' => 15, 'total' => 0],
+            ]),
+        ]);
+
         $response = $this->getJson('/api/employees?country=USA');
 
         $response->assertOk();
         $this->assertEmpty($response->json('data'));
         $this->assertEquals(0, $response->json('pagination.total'));
+    }
+
+    // ── HTTP fallback on cache miss ──────────────────────────────────────
+
+    public function test_cache_miss_fetches_from_hr_service(): void
+    {
+        // Redis is empty — should fall back to HR Service HTTP
+        Http::fake([
+            '*/api/employees*' => Http::response([
+                'data' => [
+                    ['id' => 1, 'name' => 'Alice', 'last_name' => 'Smith', 'salary' => '75000.00', 'country' => 'USA', 'ssn' => '***-**-6789', 'address' => '123 Main St'],
+                    ['id' => 2, 'name' => 'Bob', 'last_name' => 'Jones', 'salary' => '60000.00', 'country' => 'USA', 'ssn' => '***-**-4321', 'address' => '456 Oak Ave'],
+                ],
+                'meta' => ['current_page' => 1, 'last_page' => 1, 'per_page' => 15, 'total' => 2],
+            ]),
+        ]);
+
+        $response = $this->getJson('/api/employees?country=USA');
+
+        $response->assertOk();
+        $this->assertCount(2, $response->json('data'));
+        $this->assertEquals(2, $response->json('pagination.total'));
+        $response->assertJsonStructure(['columns', 'data', 'pagination']);
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), '/api/employees')
+                && $request['country'] === 'USA';
+        });
+
+        // Second request should be served from cache — no additional HTTP call
+        Http::fake([
+            '*/api/employees*' => Http::response([], 500),
+        ]);
+
+        $response2 = $this->getJson('/api/employees?country=USA');
+        $response2->assertOk();
+        $this->assertEquals($response->json(), $response2->json());
+    }
+
+    public function test_cache_miss_hr_service_unavailable_returns_empty(): void
+    {
+        // Redis is empty AND HR Service is down
+        Http::fake([
+            '*/api/employees*' => Http::response('Service Unavailable', 503),
+        ]);
+
+        $response = $this->getJson('/api/employees?country=USA');
+
+        $response->assertOk();
+        $this->assertEmpty($response->json('data'));
+        $this->assertEquals(0, $response->json('pagination.total'));
+        $response->assertJsonStructure(['columns', 'data', 'pagination']);
+    }
+
+    public function test_cache_hit_does_not_call_hr_service(): void
+    {
+        // Pre-populate Redis cache
+        $this->cacheUsaEmployee(1);
+
+        Http::fake();
+
+        $response = $this->getJson('/api/employees?country=USA');
+
+        $response->assertOk();
+        $this->assertCount(1, $response->json('data'));
+
+        Http::assertNothingSent();
     }
 }
