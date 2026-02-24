@@ -34,17 +34,4 @@ class Employee extends Model
         return $query->where('country', $country);
     }
 
-    /**
-     * Mask SSN for API responses: ***-**-XXXX
-     */
-    public function getMaskedSsnAttribute(): ?string
-    {
-        if (!$this->ssn) {
-            return null;
-        }
-
-        $lastFour = substr(preg_replace('/\D/', '', $this->ssn), -4);
-
-        return "***-**-{$lastFour}";
-    }
 }

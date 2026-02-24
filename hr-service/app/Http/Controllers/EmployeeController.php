@@ -6,6 +6,8 @@ use App\Events\EmployeeCreated;
 use App\Events\EmployeeDeleted;
 use App\Events\EmployeeUpdated;
 use App\Http\Requests\EmployeeFormRequest;
+use App\Http\Resources\EmployeeCollection;
+use App\Http\Resources\EmployeeResource;
 use App\Models\Employee;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,7 +15,6 @@ use Illuminate\Support\Facades\Log;
 
 class EmployeeController extends Controller
 {
-
     /**
      * GET /api/employees — Paginated list, filterable by country.
      */
@@ -28,19 +29,7 @@ class EmployeeController extends Controller
         $perPage = $request->input('per_page', 15);
         $employees = $query->paginate($perPage);
 
-        $employees->getCollection()->transform(function (Employee $employee) {
-            return $this->formatEmployee($employee);
-        });
-
-        return response()->json([
-            'data' => $employees->items(),
-            'meta' => [
-                'current_page' => $employees->currentPage(),
-                'last_page'    => $employees->lastPage(),
-                'per_page'     => $employees->perPage(),
-                'total'        => $employees->total(),
-            ],
-        ]);
+        return (new EmployeeCollection($employees))->response();
     }
 
     /**
@@ -60,9 +49,7 @@ class EmployeeController extends Controller
             ]);
         }
 
-        return response()->json([
-            'data' => $this->formatEmployee($employee),
-        ], 201);
+        return (new EmployeeResource($employee))->response()->setStatusCode(201);
     }
 
     /**
@@ -76,9 +63,7 @@ class EmployeeController extends Controller
             return response()->json(['message' => 'Employee not found.'], 404);
         }
 
-        return response()->json([
-            'data' => $this->formatEmployee($employee),
-        ]);
+        return (new EmployeeResource($employee))->response();
     }
 
     /**
@@ -115,9 +100,7 @@ class EmployeeController extends Controller
             ]);
         }
 
-        return response()->json([
-            'data' => $this->formatEmployee($employee),
-        ]);
+        return (new EmployeeResource($employee))->response();
     }
 
     /**
@@ -146,33 +129,5 @@ class EmployeeController extends Controller
         }
 
         return response()->json(null, 204);
-    }
-
-    /**
-     * Format an employee for API response — masks SSN for USA employees.
-     */
-    private function formatEmployee(Employee $employee): array
-    {
-        $data = [
-            'id'        => $employee->id,
-            'name'      => $employee->name,
-            'last_name' => $employee->last_name,
-            'salary'    => $employee->salary,
-            'country'   => $employee->country,
-            'created_at' => $employee->created_at,
-            'updated_at' => $employee->updated_at,
-        ];
-
-        if ($employee->country === 'USA') {
-            $data['ssn']     = $employee->masked_ssn;
-            $data['address'] = $employee->address;
-        }
-
-        if ($employee->country === 'Germany') {
-            $data['tax_id'] = $employee->tax_id;
-            $data['goal']   = $employee->goal;
-        }
-
-        return $data;
     }
 }

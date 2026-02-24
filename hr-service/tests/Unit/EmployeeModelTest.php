@@ -7,41 +7,6 @@ use Tests\TestCase;
 
 class EmployeeModelTest extends TestCase
 {
-    public function test_ssn_is_masked_for_usa_employee(): void
-    {
-        $employee = new Employee([
-            'name' => 'John',
-            'last_name' => 'Doe',
-            'salary' => 75000,
-            'country' => 'USA',
-            'ssn' => '123-45-6789',
-            'address' => '123 Main St',
-        ]);
-
-        $this->assertEquals('***-**-6789', $employee->masked_ssn);
-    }
-
-    public function test_ssn_masking_handles_null(): void
-    {
-        $employee = new Employee([
-            'name' => 'Hans',
-            'last_name' => 'Mueller',
-            'salary' => 65000,
-            'country' => 'Germany',
-        ]);
-
-        $this->assertNull($employee->masked_ssn);
-    }
-
-    public function test_ssn_masking_with_digits_only(): void
-    {
-        $employee = new Employee([
-            'ssn' => '123456789',
-        ]);
-
-        $this->assertEquals('***-**-6789', $employee->masked_ssn);
-    }
-
     public function test_fillable_includes_all_country_fields(): void
     {
         $employee = new Employee();
