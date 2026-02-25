@@ -6,9 +6,6 @@ use App\Services\EventConsumer;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use PhpAmqpLib\Connection\AMQPStreamConnection;
-use PhpAmqpLib\Exception\AMQPHeartbeatMissedException;
-use PhpAmqpLib\Exception\AMQPConnectionClosedException;
-use PhpAmqpLib\Exception\AMQPIOException;
 use PhpAmqpLib\Exchange\AMQPExchangeType;
 use PhpAmqpLib\Message\AMQPMessage;
 
@@ -30,30 +27,12 @@ class ConsumeEmployeeEvents extends Command
         while (true) {
             try {
                 $this->consumeLoop($consumer, $queue);
-            } catch (AMQPHeartbeatMissedException $e) {
-                Log::warning('RabbitMQ heartbeat missed, reconnecting...', [
-                    'exception' => $e->getMessage(),
+            } catch (\Throwable $e) {
+                Log::warning('RabbitMQ consumer error, reconnecting...', [
+                    'exception' => get_class($e),
+                    'message' => $e->getMessage(),
                 ]);
-                $this->warn("Heartbeat missed: {$e->getMessage()}. Reconnecting in " . self::RECONNECT_DELAY . "s...");
-            } catch (AMQPConnectionClosedException $e) {
-                Log::warning('RabbitMQ connection closed, reconnecting...', [
-                    'exception' => $e->getMessage(),
-                ]);
-                $this->warn("Connection closed: {$e->getMessage()}. Reconnecting in " . self::RECONNECT_DELAY . "s...");
-            } catch (AMQPIOException $e) {
-                Log::warning('RabbitMQ IO error, reconnecting...', [
-                    'exception' => $e->getMessage(),
-                ]);
-                $this->warn("IO error: {$e->getMessage()}. Reconnecting in " . self::RECONNECT_DELAY . "s...");
-            } catch (\RuntimeException $e) {
-                if (str_contains($e->getMessage(), 'Broken pipe') || str_contains($e->getMessage(), 'Connection reset')) {
-                    Log::warning('RabbitMQ connection lost, reconnecting...', [
-                        'exception' => $e->getMessage(),
-                    ]);
-                    $this->warn("Connection lost: {$e->getMessage()}. Reconnecting in " . self::RECONNECT_DELAY . "s...");
-                } else {
-                    throw $e;
-                }
+                $this->warn(get_class($e) . ": {$e->getMessage()}. Reconnecting in " . self::RECONNECT_DELAY . "s...");
             }
 
             sleep(self::RECONNECT_DELAY);
@@ -96,6 +75,7 @@ class ConsumeEmployeeEvents extends Command
 
         $this->info("RabbitMQ consumer started. Waiting for messages on [{$queue}]...");
 
+        $command = $this;
         $channel->basic_consume(
             $queue,
             '',
@@ -103,9 +83,17 @@ class ConsumeEmployeeEvents extends Command
             false,
             false,
             false,
-            function (AMQPMessage $msg) use ($consumer, $channel) {
-                $result = $consumer->processMessage($msg->getBody());
+            function (AMQPMessage $msg) use ($consumer, $channel, $command) {
+                $body = $msg->getBody();
+                $decoded = json_decode($body, true);
+                $eventType = $decoded['event_type'] ?? 'unknown';
+                $eventId = $decoded['event_id'] ?? 'unknown';
+                $command->info("[CONSUMER] Received {$eventType} (id: {$eventId})");
+
+                $result = $consumer->processMessage($body);
                 $deliveryTag = $msg->getDeliveryTag();
+
+                $command->info("[CONSUMER] {$eventType} → {$result}");
 
                 match ($result) {
                     EventConsumer::ACK => $channel->basic_ack($deliveryTag),
