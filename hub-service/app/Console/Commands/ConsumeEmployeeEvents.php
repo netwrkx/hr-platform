@@ -6,6 +6,7 @@ use App\Services\EventConsumer;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use PhpAmqpLib\Connection\AMQPStreamConnection;
+use PhpAmqpLib\Exchange\AMQPExchangeType;
 use PhpAmqpLib\Message\AMQPMessage;
 
 class ConsumeEmployeeEvents extends Command
@@ -27,20 +28,13 @@ class ConsumeEmployeeEvents extends Command
 
         try {
             $connection = new AMQPStreamConnection(
-                config('rabbitmq.host', 'localhost'),
-                config('rabbitmq.port', 5672),
-                config('rabbitmq.user', 'guest'),
-                config('rabbitmq.password', 'guest'),
-                config('rabbitmq.vhost', '/'),
-                false,       // insist
-                'AMQPLAIN',  // login_method
-                null,        // login_response
-                'en_US',     // locale
-                3.0,         // connection_timeout
-                130.0,       // read_write_timeout (> 2 * heartbeat)
-                null,        // context
-                false,       // keepalive
-                60           // heartbeat
+                host: config('rabbitmq.host', 'localhost'),
+                port: config('rabbitmq.port', 5672),
+                user: config('rabbitmq.user', 'guest'),
+                password: config('rabbitmq.password', 'guest'),
+                vhost: config('rabbitmq.vhost', '/'),
+                heartbeat: 60,
+                read_write_timeout: 130.0,
             );
         } catch (\Throwable $e) {
             $this->error("Failed to connect to RabbitMQ: {$e->getMessage()}");
@@ -53,15 +47,15 @@ class ConsumeEmployeeEvents extends Command
         $channel = $connection->channel();
 
         // Declare dead-letter exchange and queue
-        $channel->exchange_declare(self::DLQ_EXCHANGE, 'fanout', false, true, false);
+        $channel->exchange_declare(self::DLQ_EXCHANGE, AMQPExchangeType::FANOUT, false, true, false);
         $channel->queue_declare($dlq, false, true, false, false);
         $channel->queue_bind($dlq, self::DLQ_EXCHANGE);
 
         // Declare main exchange and queue with DLX
-        $channel->exchange_declare(self::EXCHANGE, 'topic', false, true, false);
-        $channel->queue_declare($queue, false, true, false, false, false, [
-            'x-dead-letter-exchange' => ['S', self::DLQ_EXCHANGE],
-        ]);
+        $channel->exchange_declare(self::EXCHANGE, AMQPExchangeType::TOPIC, false, true, false);
+        $channel->queue_declare($queue, false, true, false, false, false, new \PhpAmqpLib\Wire\AMQPTable([
+            'x-dead-letter-exchange' => self::DLQ_EXCHANGE,
+        ]));
 
         // Bind to all employee events
         $channel->queue_bind($queue, self::EXCHANGE, 'employee.#');
@@ -78,8 +72,8 @@ class ConsumeEmployeeEvents extends Command
             false,
             false,
             function (AMQPMessage $msg) use ($consumer, $channel) {
-                $result = $consumer->processMessage($msg->body);
-                $deliveryTag = $msg->delivery_info['delivery_tag'];
+                $result = $consumer->processMessage($msg->getBody());
+                $deliveryTag = $msg->getDeliveryTag();
 
                 match ($result) {
                     EventConsumer::ACK => $channel->basic_ack($deliveryTag),
@@ -89,7 +83,7 @@ class ConsumeEmployeeEvents extends Command
             }
         );
 
-        while (count($channel->callbacks)) {
+        while ($channel->is_consuming()) {
             $channel->wait();
         }
 

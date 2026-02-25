@@ -81,6 +81,13 @@ class EmployeeController extends Controller
             ];
         }
 
+        // Warm per-employee Redis keys so getEmployeesByCountry() hits on next request
+        foreach ($result['data'] as $employee) {
+            if (isset($employee['id'])) {
+                $this->cacheService->cacheEmployee((int) $employee['id'], $employee);
+            }
+        }
+
         return [
             'columns' => $this->columnConfig->getColumns($country),
             'data' => $result['data'],

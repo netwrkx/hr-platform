@@ -113,13 +113,15 @@ services:
       RABBITMQ_EXCHANGE: hr.events
       RABBITMQ_QUEUE: hub.employee.events
       HR_SERVICE_URL: http://hr-service:8000
-      BROADCAST_DRIVER: pusher
+      BROADCAST_CONNECTION: pusher
       PUSHER_APP_ID: hr-platform
       PUSHER_APP_KEY: hr-platform-key
       PUSHER_APP_SECRET: hr-platform-secret
       PUSHER_HOST: soketi
       PUSHER_PORT: 6001
       PUSHER_SCHEME: http
+    entrypoint: ["/var/www/html/docker-entrypoint.sh"]
+    command: ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -130,6 +132,7 @@ services:
     volumes:
       - ./hub-service:/var/www/html
       - ./php-errors.ini:/usr/local/etc/php/conf.d/errors.ini
+      - ./websocket-test.html:/var/www/html/public/websocket-test.html:ro
 
 volumes:
   postgres_data:
