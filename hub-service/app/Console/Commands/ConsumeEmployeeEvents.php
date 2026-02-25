@@ -6,6 +6,9 @@ use App\Services\EventConsumer;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use PhpAmqpLib\Connection\AMQPStreamConnection;
+use PhpAmqpLib\Exception\AMQPHeartbeatMissedException;
+use PhpAmqpLib\Exception\AMQPConnectionClosedException;
+use PhpAmqpLib\Exception\AMQPIOException;
 use PhpAmqpLib\Exchange\AMQPExchangeType;
 use PhpAmqpLib\Message\AMQPMessage;
 
@@ -18,31 +21,60 @@ class ConsumeEmployeeEvents extends Command
 
     private const EXCHANGE = 'hr.events';
     private const DLQ_EXCHANGE = 'hr.events.dlx';
+    private const RECONNECT_DELAY = 5;
 
     public function handle(EventConsumer $consumer): int
     {
         $queue = $this->option('queue');
+
+        while (true) {
+            try {
+                $this->consumeLoop($consumer, $queue);
+            } catch (AMQPHeartbeatMissedException $e) {
+                Log::warning('RabbitMQ heartbeat missed, reconnecting...', [
+                    'exception' => $e->getMessage(),
+                ]);
+                $this->warn("Heartbeat missed: {$e->getMessage()}. Reconnecting in " . self::RECONNECT_DELAY . "s...");
+            } catch (AMQPConnectionClosedException $e) {
+                Log::warning('RabbitMQ connection closed, reconnecting...', [
+                    'exception' => $e->getMessage(),
+                ]);
+                $this->warn("Connection closed: {$e->getMessage()}. Reconnecting in " . self::RECONNECT_DELAY . "s...");
+            } catch (AMQPIOException $e) {
+                Log::warning('RabbitMQ IO error, reconnecting...', [
+                    'exception' => $e->getMessage(),
+                ]);
+                $this->warn("IO error: {$e->getMessage()}. Reconnecting in " . self::RECONNECT_DELAY . "s...");
+            } catch (\RuntimeException $e) {
+                if (str_contains($e->getMessage(), 'Broken pipe') || str_contains($e->getMessage(), 'Connection reset')) {
+                    Log::warning('RabbitMQ connection lost, reconnecting...', [
+                        'exception' => $e->getMessage(),
+                    ]);
+                    $this->warn("Connection lost: {$e->getMessage()}. Reconnecting in " . self::RECONNECT_DELAY . "s...");
+                } else {
+                    throw $e;
+                }
+            }
+
+            sleep(self::RECONNECT_DELAY);
+        }
+    }
+
+    private function consumeLoop(EventConsumer $consumer, string $queue): void
+    {
         $dlq = "{$queue}.dlq";
 
         $this->info("Connecting to RabbitMQ...");
 
-        try {
-            $connection = new AMQPStreamConnection(
-                host: config('rabbitmq.host', 'localhost'),
-                port: config('rabbitmq.port', 5672),
-                user: config('rabbitmq.user', 'guest'),
-                password: config('rabbitmq.password', 'guest'),
-                vhost: config('rabbitmq.vhost', '/'),
-                heartbeat: 60,
-                read_write_timeout: 130.0,
-            );
-        } catch (\Throwable $e) {
-            $this->error("Failed to connect to RabbitMQ: {$e->getMessage()}");
-            Log::critical('RabbitMQ consumer connection failed', [
-                'exception' => $e->getMessage(),
-            ]);
-            return Command::FAILURE;
-        }
+        $connection = new AMQPStreamConnection(
+            host: config('rabbitmq.host', 'localhost'),
+            port: config('rabbitmq.port', 5672),
+            user: config('rabbitmq.user', 'guest'),
+            password: config('rabbitmq.password', 'guest'),
+            vhost: config('rabbitmq.vhost', '/'),
+            heartbeat: 0,
+            read_write_timeout: 0,
+        );
 
         $channel = $connection->channel();
 
@@ -83,13 +115,13 @@ class ConsumeEmployeeEvents extends Command
             }
         );
 
-        while ($channel->is_consuming()) {
-            $channel->wait();
+        try {
+            while ($channel->is_consuming()) {
+                $channel->wait();
+            }
+        } finally {
+            try { $channel->close(); } catch (\Throwable) {}
+            try { $connection->close(); } catch (\Throwable) {}
         }
-
-        $channel->close();
-        $connection->close();
-
-        return Command::SUCCESS;
     }
 }
