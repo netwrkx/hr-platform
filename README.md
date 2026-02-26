@@ -5,29 +5,35 @@ An event-driven HR platform built with two Laravel microservices connected via R
 ## Architecture Overview
 
 ```
-┌─────────────────┐                                  ┌─────────────────┐
-│                  │        RabbitMQ (5672)           │                 │
-│   HR Service     │      Topic Exchange: hr.events   │   Hub Service   │
-│   (port 8001)    │──────────────────────────────────►│   (port 8002)   │
-│                  │   Routing: employee.{event}.{cc} │                 │
-│  ┌─────────────┐ │                                  │ ┌─────────────┐ │
-│  │ PostgreSQL  │ │                                  │ │    Redis     │ │
-│  │   (5432)    │ │                                  │ │   (6379)    │ │
-│  └─────────────┘ │                                  │ └─────────────┘ │
-│                  │                                  │                 │
-│  Employee CRUD   │                                  │  Cached APIs    │
-│  Event Publisher  │                                  │  Checklists     │
-└─────────────────┘                                  │  Server-Driven  │
-                                                     │  UI APIs        │
-                                                     └────────┬────────┘
-                                                              │
-                                                     Soketi WebSocket
-                                                        (port 6001)
-                                                              │
-                                                     ┌────────▼────────┐
-                                                     │     Browser     │
-                                                     │   (Pusher.js)   │
-                                                     └─────────────────┘
+ ┌─────────────────────────────────────────────────────────────────────────────────────────┐
+ │                                 HR Platform Architecture                                │
+ ├─────────────────────────────────────────────────────────────────────────────────────────┤
+ │                                                                                         │
+ │  ┌───────────────┐    RabbitMQ (5672)              ┌─────────────────────────┐          │
+ │  │               │ Topic Exchange: hr.events       │                         │          │
+ │  │  hr-service   │ ────────────────────────────►   │  hub-service            │          │
+ │  │  :8001        │  Routing: employee.{event}.{cc} │  :8002                  │          │
+ │  │               │                                 │                         │          │
+ │  │  - CRUD API   │                                 │  - Consumer             │          │
+ │  │  - Publishes  │                                 │  - Cache mgmt           │          │
+ │  │    events     │                                 │  - Checklists           │          │
+ │  │               │                                 │  - Server-Driven UI Api │          │
+ │  └──────┬────────┘                                 │  - WebSocket            │          │
+ │         │                                          └──┬───────────────┬──────┘          │
+ │    ┌────▼─────┐                               ┌───────▼─┐          ┌──▼────┐            │
+ │    │PostgreSQL│                               │ Redis   │          │Soketi │            │
+ │    │  :5432   │                               │ :6379   │          │ :6001 │            │
+ │    └──────────┘                               └─────────┘          └───────┘            │
+ └─────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+  - hr-service (:8001) — Employee CRUD + publishes events to RabbitMQ
+  - hub-service (:8002) — Consumes events, caches data in Redis, serves checklists, broadcasts via WebSocket (Soketi)
+  - RabbitMQ — Topic exchange hr.events, routing keys like employee.created.USA
+  - Redis — Cache with TTL + tag-based invalidation
+  - PostgreSQL — Source of truth for employee data
+  - Soketi — Self-hosted WebSocket server (Pusher-compatible)
+
 ```
 
 ### Event Flow
