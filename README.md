@@ -78,7 +78,7 @@ An event-driven HR platform built with two Laravel microservices connected via R
 
 ```bash
 # Clone the repository
-git clone <repo-url>
+git clone https://github.com/netwrkx/hr-platform.git
 cd hr-platform
 
 # Start all services
