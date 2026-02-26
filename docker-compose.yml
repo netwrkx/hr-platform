@@ -102,7 +102,7 @@ services:
       APP_KEY: base64:hub-service-key-placeholder-32c=
       APP_DEBUG: "true"
       APP_URL: http://localhost:8002
-      CACHE_DRIVER: redis
+      CACHE_STORE: redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
       RABBITMQ_HOST: rabbitmq
